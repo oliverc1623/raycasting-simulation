@@ -12,7 +12,7 @@ from time import time
 from PIL import Image
 import numpy as np
 
-class ConvRNN15(nn.Module):
+class ConvRNN(nn.Module):
     def __init__(self):
         """
         Initializes the layers of the convolutional recurrent neural network.
@@ -21,7 +21,7 @@ class ConvRNN15(nn.Module):
         self.convlstm = convLSTM.ConvLSTM(3, 15, (3,3), 
                                           6, True, True, False) 
         self.flat = nn.Flatten()
-        self.lin1 = nn.Linear(15*240*320, 512)
+        self.lin1 = nn.Linear(15*224*224, 512)
         self.relu = nn.ReLU()
         self.lin2 = nn.Linear(512, 3)
         
@@ -31,6 +31,7 @@ class ConvRNN15(nn.Module):
         
         :param img: (tensor) tensor of rgb values that represent an image
         """
+        img = img.unsqueeze(1)
         _, lstm_output = self.convlstm(img)
         x = self.flat(lstm_output[0][0])
         x = self.lin1(x)

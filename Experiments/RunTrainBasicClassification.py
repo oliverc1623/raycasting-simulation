@@ -27,7 +27,7 @@ compared_models = [
     "alexnet",
 ]
 
-for dataset in ["uniform-full", "wander-full"]:
+for dataset in ["corrected-wander-full"]: #"uniform-full", 
 
     for model in compared_models:
 
@@ -36,7 +36,7 @@ for dataset in ["uniform-full", "wander-full"]:
                 "python",
                 "TrainBasicClassification.py",
                 model,
-                dataset,
-                "--pretrained",
+                dataset
+                #"--pretrained",
             ]
         )
