@@ -15,9 +15,9 @@ sys.path.append("../Models")
 sys.path.append("../MazeGen")
 from MazeUtils import read_maze_file, percent_through_maze, bfs_dist_maze, is_on_path
 sys.path.append("../Notebooks")
-# from RNN_classes_funcs_Marchese import *
-# from cmd_classes_funcs_Marchese import *
-# For Christy's cmd models
+from RNN_classes_funcs_Marchese import *
+from cmd_classes_funcs_Marchese import *
+
 
 def parent_to_deg(f):
     parent = parent_label(f)
@@ -266,7 +266,7 @@ def main(argv):
 
     world = PycastWorld(224, 224, maze)
 
-    if model_type == "cmd" or model_type == "rnn":
+    if model_type == "cmd":
         model_inf = ConvRNN()
         model_inf.load_state_dict(torch.load(model))
     else:
@@ -332,13 +332,14 @@ def main(argv):
                 move = 'straight'
         elif model_type == "rnn":
             model_inf.eval()
-            img = (tensor(image_data)/255).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            output = model_inf(img)
+#             img = (tensor(image_data)/255).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            move = model_inf.predict(image_data)[0]
+#             output = model_inf(img)
             # Assuming we always get batches
-            for i in range(output.size()[0]):
-                # Getting the predicted most probable move
-                action_index = torch.argmax(output[i])
-                move = 'left' if action_index == 0 else 'right' if action_index == 1 else 'straight'
+#             for i in range(output.size()[0]):
+#                 # Getting the predicted most probable move
+#                 action_index = torch.argmax(output[i])
+#                 move = 'left' if action_index == 0 else 'right' if action_index == 1 else 'straight'
 
         if move == "left" and prev_move == "right":
             move = "straight"
