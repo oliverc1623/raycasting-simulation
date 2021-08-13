@@ -10,13 +10,14 @@ from Imitate import *
 import RegressionImitator
 from RegressionImitator import *
 import pandas
+import seaborn as sns
 
 colors = [
     "tab:blue",
     "tab:orange",
-    "tab:green",
-    "tab:red",
     "tab:purple",
+    "tab:red",
+    "tab:green",
     "tab:brown",
     "tab:pink",
 ]
@@ -66,9 +67,11 @@ def get_colors(num_unique_mazes) -> list:
     return color_labels
 
 def plot_bars(df, metric):
+    matplotlib.rcParams.update({'font.size': 12})
+    
     full_names = list(df["Network"])
     clean_names = list(map(get_network_name, full_names))
-    unique_names = list(set(clean_names))
+    unique_names = list(pd.unique(clean_names))
     sparse_labels = []
 
     for i in range(0, len(clean_names)):
@@ -81,7 +84,7 @@ def plot_bars(df, metric):
     ci_bounds = get_error(df)
     max_error = max(df["error"])
     increment = 5
-    fig, ax = plt.subplots(figsize=(16, 9))
+    fig, ax = plt.subplots(figsize=(9, 12))
     y_lab = "Average Steps Needed Over Averaged Mazes"
 
     x = np.arange(len(clean_names))
@@ -89,27 +92,27 @@ def plot_bars(df, metric):
     vals = list(df["mean"])
     
     if metric == "Completion":
-        ax.yaxis.set_major_formatter(mtick.PercentFormatter())
+        ax.xaxis.set_major_formatter(mtick.PercentFormatter())
         y_lab = "Average Completion Over Averaged Mazes"
-        ax.set_yticks(np.arange(0, 100, 10))
-        ax.set_ylim(bottom = 0.0, top = 100.0)
+        ax.set_xticks(np.arange(0, 100, 10))
+        ax.set_xlim(left = 0.0, right = 100.0)
     else:
-        ax.set_yticks(np.arange(0, max(vals), 200))
-        ax.set_ylim(bottom = 0.0, top = max(vals))
+        ax.set_xticks(np.arange(0, max(vals), 200))
+        ax.set_xlim(left = 0.0, right = max(vals))
     
-    ax.bar(
+    ax.barh(
         x,
         vals,
-        yerr=ci_bounds,
+        xerr=ci_bounds,
         color=color_labels,
         align="center",
         alpha=0.75,
         ecolor="grey",
         capsize=2,
     )
-    ax.set_xticks(x)
+    ax.set_yticks(x)
 #     ax.set_yticks(np.arange(0, max(vals) + max_error, increment))
-    ax.set_xticklabels(labels=sparse_labels, rotation=45)
+    ax.set_yticklabels(labels=sparse_labels)
     # ax.legend()
     # Axis styling.
     ax.spines["top"].set_visible(False)
@@ -118,17 +121,20 @@ def plot_bars(df, metric):
     ax.spines["bottom"].set_color("#DDDDDD")
     ax.tick_params(bottom=False, left=False)
     ax.set_axisbelow(True)
-    ax.yaxis.grid(True, color="#EEEEEE")
-    ax.xaxis.grid(False)
+    ax.xaxis.grid(True, color="#EEEEEE")
+    ax.yaxis.grid(False)
 
-    ax.set_xlabel("Network", labelpad=15)
-    ax.set_ylabel(y_lab, labelpad=15)
+    ax.set_xlabel("Percentage Completed", labelpad=15)
+    ax.set_ylabel("Architecture", labelpad=15)
     ax.set_title(f"{metric} Navigated per Network Replicate")
     return ax 
 
 # Scatter Plot Code
 def get_csv(file):
     return "csv" in file
+
+def get_petrained(file):
+    return "-pretrained" in file
 
 def get_losses(csv_files, data_dir, loss_type):
     training_losses = []
@@ -137,40 +143,58 @@ def get_losses(csv_files, data_dir, loss_type):
         if len(df) == 0:
             training_losses.append(0.0)
         else:
-            training_losses.append(min(df["valid_loss"]))
+            if loss_type == "accuracy":
+                training_losses.append(max(df[loss_type]))
+            else:
+                training_losses.append(min(df[loss_type]))
     return training_losses
 
-def merge_loss_data(data_dir, df, loss_type, clean_names, average=False):
+def merge_loss_data(data_dir, df, loss_type, average=False):
     data_files = os.listdir(data_dir)
     data_files.sort()
     csvs = list(filter(get_csv, data_files))
+    csvs = list(filter(get_petrained, csvs))
     losses = get_losses(csvs, data_dir, loss_type)
     means = df['mean']
-    names = clean_names    
+    names = list(map(get_network_name, df['Network']))    
     
     if average:        
         losses = np.array(losses).reshape(-1,4).mean(axis=1)
         means = np.array(means).reshape(-1,4).mean(axis=1)
-        names = list(set(clean_names))
+        names = list(pd.unique(names))
     
     df = pandas.DataFrame()
-    df = df.assign(Network = names)
+    df = df.assign(clean_names = names)
     df = df.assign(losses = losses)
-    df = df.assign(mean_steps = means)
+    df = df.assign(mean_completion = means)
     return df
 
 def plot_average_scatter(df):    
+    sns.set_theme()
+    sns.set_context("paper")
+    fig = plt.gcf()
+    fig.set_size_inches(12, 9)
+    sns.scatterplot(data=df, x="losses", y="mean_completion", hue="clean_names", style="clean_names", s=200)
+    plt.legend(bbox_to_anchor=(1.10, 1), borderaxespad=0)
+    x = list(df['losses'])
+    y = list(df['mean_completion'])
+    for i, label in enumerate(list(df['clean_names'])):
+        plt.annotate(label, (x[i], y[i]))
+    return plt
+
+def plot_boxplot(df, mazes):   
+    sns.set_theme()
+
+    all_data = []
+    for m in mazes:    
+        x = list(df[m])
+        all_data.append(x)
+    all_data = pd.DataFrame(all_data).T
+    all_data.columns = mazes
+    all_data = pd.DataFrame(all_data.stack())
+    all_data.reset_index(level=1, inplace=True)
+    all_data.columns = ['maze', 'percentage']
+        
     fig, ax = plt.subplots(figsize=(16, 9))
-    x = list(df["losses"])
-    y = list(df["mean_steps"])
-    ax.scatter(x, y, s=200, c=df.losses, alpha=.5)
-    ax.set_xlabel("Training Loss")
-    ax.set_ylabel("Steps Averaged Over Replicates")
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_visible(False)
-    ax.spines['bottom'].set_color('#DDDDDD')
-    ax.set_title("Averaged Steps Taken Over Training Loss per Model")
-    for i, label in enumerate(list(df['Network'])):
-        ax.annotate(label, (x[i], y[i]))
-    return ax
+    ax = sns.violinplot(x="maze", y="percentage", data=all_data)
+    ax.set(ylim=(0, None))
