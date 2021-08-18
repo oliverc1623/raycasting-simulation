@@ -84,7 +84,7 @@ def plot_bars(df, metric):
     ci_bounds = get_error(df)
     max_error = max(df["error"])
     increment = 5
-    fig, ax = plt.subplots(figsize=(9, 12))
+    fig, ax = plt.subplots(figsize=(12, 12))
     y_lab = "Average Steps Needed Over Averaged Mazes"
 
     x = np.arange(len(clean_names))
@@ -136,24 +136,33 @@ def get_csv(file):
 def get_petrained(file):
     return "-pretrained" in file
 
+def get_nonpetrained(file):
+    return "-notpretrained" in file
+
 def get_losses(csv_files, data_dir, loss_type):
     training_losses = []
     for c in csv_files:
+        if c == "classification-resnet18-pretrained-trainlog-0.csv":
+            training_losses.append(0.0)
+            continue
         df = pandas.read_csv(data_dir + "/" + c)
         if len(df) == 0:
             training_losses.append(0.0)
         else:
-            if loss_type == "accuracy":
-                training_losses.append(max(df[loss_type]))
+            if loss_type == "time":
+                training_losses.append(min(df[loss_type]))
             else:
                 training_losses.append(min(df[loss_type]))
     return training_losses
 
-def merge_loss_data(data_dir, df, loss_type, average=False):
+def merge_loss_data(data_dir, df, loss_type, model_type, average=False):
     data_files = os.listdir(data_dir)
     data_files.sort()
     csvs = list(filter(get_csv, data_files))
-    csvs = list(filter(get_petrained, csvs))
+    if model_type == "pretrained":
+        csvs = list(filter(get_petrained, csvs))
+    else: 
+        csvs = list(filter(get_nonpetrained, csvs))
     losses = get_losses(csvs, data_dir, loss_type)
     means = df['mean']
     names = list(map(get_network_name, df['Network']))    
@@ -169,9 +178,10 @@ def merge_loss_data(data_dir, df, loss_type, average=False):
     df = df.assign(mean_completion = means)
     return df
 
-def plot_average_scatter(df):    
+def plot_average_scatter(df):   
+    matplotlib.rcParams.update({'font.size': 12})
     sns.set_theme()
-    sns.set_context("paper")
+#     sns.set_context("paper")
     fig = plt.gcf()
     fig.set_size_inches(12, 9)
     sns.scatterplot(data=df, x="losses", y="mean_completion", hue="clean_names", style="clean_names", s=200)
@@ -182,9 +192,10 @@ def plot_average_scatter(df):
         plt.annotate(label, (x[i], y[i]))
     return plt
 
-def plot_boxplot(df, mazes):   
-    sns.set_theme()
+def clean_maze_name(m):
+    return m[:-4].capitalize().replace("_", " ")
 
+def plot_boxplot(df, mazes):
     all_data = []
     for m in mazes:    
         x = list(df[m])
@@ -194,7 +205,13 @@ def plot_boxplot(df, mazes):
     all_data = pd.DataFrame(all_data.stack())
     all_data.reset_index(level=1, inplace=True)
     all_data.columns = ['maze', 'percentage']
+    clean_mazes = list(map(clean_maze_name, list(all_data['maze'])))
+    all_data = all_data.assign(maze=clean_mazes)
         
-    fig, ax = plt.subplots(figsize=(16, 9))
-    ax = sns.violinplot(x="maze", y="percentage", data=all_data)
-    ax.set(ylim=(0, None))
+    sns.set_theme()
+    sns.set_context("paper")
+    fig = plt.gcf()
+    fig.set_size_inches(17, 9)
+    sns.swarmplot(x="maze", y="percentage", data=all_data)
+    plt.ylim=(0, None)
+    return plt

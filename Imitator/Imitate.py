@@ -156,9 +156,9 @@ def animate(image_frames, name, dir_name):
         os.mkdir(dir_name)
     else: 
         os.system(dir_name)
-    save_path = os.path.abspath(dir_name)
-    name = str(name).split("/")[-1][:-4]
-    fig, ax = plt.subplots()
+#     save_path = os.path.abspath(dir_name)
+#     name = str(name).split("/")[-1][:-4]
+#     fig, ax = plt.subplots()
 #     ln = plt.imshow(image_frames[0])
 
 #     def init():
@@ -244,9 +244,8 @@ def train_model(
 def main(argv):
 #     torch.cuda.set_device(1)
     if torch.cuda.is_available():
-        print("Using GPU")
         device = torch.device('cuda')
-        torch.cuda.set_device(0)
+        torch.cuda.set_device(1)
     else:
         device = torch.device('cpu')
     maze = argv[0] if len(argv) > 0 else "../Mazes/maze01.txt"
@@ -271,7 +270,10 @@ def main(argv):
         model_inf.load_state_dict(torch.load(model))
     else:
         path = Path("../")
+        print("Model: " + model)
         model_inf = load_learner(model, cpu=False)
+#         model_inf = torch.load(model, "cuda:3")
+#         if "classification-resnet50-pretrained-0.pkl" in 
         model_inf.eval()
 
     prev_move = None
@@ -286,7 +288,7 @@ def main(argv):
     stuck = False
     # Initialize maximum number of steps in case the robot travels in a 
     # completely incorrect direction
-    max_steps = 3500 #np.random.randint(20, 40 + 1)
+    max_steps = 3500
 
     # Initialize Maze Check
     maze_rvs, _, _, maze_directions, _ = read_maze_file(maze)
@@ -312,6 +314,7 @@ def main(argv):
             if stacked:
                 pred_coords, _, _ = model_inf.predict(stacked_input(prev_image_data, image_data))
             else:
+#                 image_data = torch.from_numpy(image_data)
                 pred_coords, _, _ = model_inf.predict(image_data)
             move = reg_predict(pred_coords)
         elif model_type == "cmd":
