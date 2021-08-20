@@ -20,7 +20,6 @@ import matplotlib as plt
 import sys
 sys.path.insert(0, '../Imitator')
 # from plot_helper import * 
-data_dir = "/raid/clark/summer2021/datasets/handmade-full/data"
 
 colors = [
     "tab:blue",
@@ -61,14 +60,50 @@ colors = [
 
 def get_network_name(m):
     name = m.split("-")[1]
-    return (
-        name.capitalize()
-        .replace("net", "Net")
-        .replace("resnext", "ResNext")
-        .replace("deep", "Deep")
-        .replace("deeper", "Deeper")
-        .replace("_res", "_Res")
-    )
+    if name[0:3] == "xse":
+        name = (
+            name.replace("xse", "X-SE")
+            .replace("_res", "-Res")
+            .replace("net", "Net")
+            .replace("next", "NeXt")
+        )
+    elif name[0] == "x":
+        name = (
+            name.capitalize()
+            .replace("net", "Net")
+            .replace("resnext", "ResNeXt")
+            .replace("res", "-Res")
+        )
+    elif "squeeze" in name:
+        name = name.capitalize().replace("_", "-").replace("net", "Net")
+    elif "vgg" in name:
+        name = name.replace("vgg", "VGG").replace("bn", "BN").replace("_", "-")
+    elif "dense" in name:
+        name = name.capitalize().replace("net", "Net")
+    elif name[0:3] == "res":
+        name = name.capitalize().replace("net", "Net")
+    elif "alex" in name:
+        name = name.capitalize().replace("net", "Net")
+
+    if "deep" in name and "deeper" not in name:
+        name = name.replace("_deep", "b")
+    elif "deeper" in name:
+        name = name.replace("_deeper", "c")
+    else:
+        name = name + "a"
+
+    if (
+        ("Squeeze" in name)
+        or ("VGG" in name)
+        or ("ResNext" in name and "SE" not in name)
+        or ("ResNet" in name and "SE" in name)
+        or ("Dense" in name)
+        or ("Alex" in name)
+        or ("ResNet" in name and "SE" not in name and "X-" not in name)
+    ):
+        name = name[:-1]
+
+    return name
 
 def get_clean_names(m):
     return m.split("-")[1]
@@ -190,7 +225,11 @@ def get_losses(csv_files, data_dir, loss_type):
             training_losses.append(0.0)
         else:
             if loss_type == "time":
-                training_losses.append(min_to_sec(min(df[loss_type])))
+                min_time = min_to_sec(min(df[loss_type]))
+                mean_time = min_to_sec(max(df[loss_type]))
+                training_losses.append((min_time + mean_time)/2)
+            elif loss_type == "accuracy":
+                training_losses.append(max(df[loss_type]))
             else:
                 training_losses.append(min(df[loss_type]))
     return training_losses
@@ -262,35 +301,51 @@ def convert_sec_to_min(s):
 
 # -
 
-# # Get Pretrained Data
+# # Get Handmade Pretrained Data
 
 # ## Get Percent, losses, and names
 
 # +
+data_dir = "/raid/clark/summer2021/datasets/handmade-full/data"
 df = pd.read_csv("handmade_pretrained/handmade_pre_percentage.csv", index_col=0)
 columns = list(df.columns)
 mazes = columns[1:-3]
 df = df.assign(clean_names=list(map(get_network_name, list(df["Network"]))))
 avg_valid = merge_loss_data(data_dir, df, "valid_loss", "pretrained", True)
-avg_train = merge_loss_data(data_dir, df, "train_loss", "pretrained", True)
+avg_accuracy = merge_loss_data(data_dir, df, "accuracy", "pretrained", True)
+# avg_train = merge_loss_data(data_dir, df, "train_loss", "pretrained", True)
 df = pd.merge(df, avg_valid, on="clean_names")
 df = df.sort_values(by=['mean_completion'])
 
 summary_table = avg_valid.rename(columns={'losses':'Valid Loss'})
-avg_train = avg_train.rename(columns={'losses':'Train Loss'})
-summary_table = summary_table.assign(Train_Loss=avg_train["Train Loss"])
+# avg_train = avg_train.rename(columns={'losses':'Train Loss'})
+# summary_table = summary_table.assign(Train_Loss=avg_train["Train Loss"])
 summary_table = summary_table[
-    ["clean_names", "Valid Loss", "Train_Loss", "mean_completion"]
+    ["clean_names", "Valid Loss", "mean_completion"]
 ]
 summary_table = summary_table.rename(
-    columns={"Train_Loss": "Train Loss", "mean_completion": "Percent Navigated", "clean_names":"Model"}
+    columns={"mean_completion": "Percent Navigated", "clean_names":"Model"}
 )
+
+summary_table["Valid Loss"] = round(summary_table["Valid Loss"], 3)
+summary_table["Percent Navigated"] = round(summary_table["Percent Navigated"], 1)
+summary_table["Validation Accuracy"] = round(avg_accuracy["losses"], 3)
+
+
 # -
 
-# ## Get Parameters
+# ## Handmade Get Parameters
+
+def sizeof_fmt(num, suffix='B'):
+    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f%s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f%s%s" % (num, 'Yi', suffix)
+
 
 # +
-model_dir = '/raid/clark/summer2021/datasets/handmade-full/models'
+model_dir = "/raid/clark/summer2021/datasets/handmade-full/models"
 models = os.listdir(model_dir)
 pre = []
 nonpre = []
@@ -309,23 +364,145 @@ nonpre_parameters = []
 
 for p in pre:
     model = load_learner(model_dir + "/" + p)
-    pre_parameters.append(sum(p.numel() for p in model.parameters()))
-    
+    pre_parameters.append(sizeof_fmt(sum(p.numel() for p in model.parameters())))
+
 for p in nonpre:
     model = load_learner(model_dir + "/" + p)
-    nonpre_parameters.append(sum(p.numel() for p in model.parameters()))
-    
+    nonpre_parameters.append(sizeof_fmt(sum(p.numel() for p in model.parameters())))
+
+df = df.sort_values(by="Network")
+avg_time = merge_loss_data(data_dir, df, "time", "pretrained", True)
+avg_time["losses"] = list(map(convert_sec_to_min, list(avg_time["losses"])))
+avg_time.columns = ["clean_names", "time", "mean_completion"]
+
+summary_table["Time"] = list(avg_time["time"])
 summary_table["Number of Parameters"] = pre_parameters
-summary_table = summary_table.set_index(['Model', 'Number of Parameters'])
-# -
+summary_table = summary_table.set_index(["Model", "Number of Parameters", "Time"])
 
 summary_table.columns = pd.MultiIndex.from_product(
-    [["Pretrained"], ["Valid Loss", "Train Loss", "Percent Navigated"]], names=["Trained/Pretrained:", "Data:"]
+    [["Pretrained"], ["Valid Loss", "Percent Navigated", "Validation Accuracy"]],
+    names=["Trained/Pretrained:", "Data:"],
+)
+# -
+
+# # Handmade NotPretrained
+
+# +
+npdf = pd.read_csv("handmade_notpretrained/handmade_notpre_percentage.csv", index_col=0)
+columns = list(npdf.columns)
+mazes = columns[1:-3]
+npdf = npdf.assign(clean_names=list(map(get_network_name, list(npdf["Network"]))))
+avg_valid = merge_loss_data(data_dir, npdf, "valid_loss", "-notpretrained", True)
+avg_accuracy = merge_loss_data(data_dir, npdf, "accuracy", "-notpretrained", True)
+# avg_train = merge_loss_data(data_dir, npdf, "train_loss", "-notpretrained", True)
+npdf = pd.merge(npdf, avg_valid, on="clean_names")
+npdf = npdf.sort_values(by=["mean_completion"])
+
+npsummary_table = avg_valid.rename(columns={"losses": "Valid Loss"})
+# avg_train = avg_train.rename(columns={'losses':'Train Loss'})
+# npsummary_table = npsummary_table.assign(Train_Loss=avg_train["Train Loss"])
+npsummary_table = npsummary_table[["clean_names", "Valid Loss", "mean_completion"]]
+npsummary_table = npsummary_table.rename(
+    columns={"mean_completion": "Percent Navigated", "clean_names": "Model"}
 )
 
-summary_table
+npsummary_table["Valid Loss"] = round(npsummary_table["Valid Loss"], 3)
+npsummary_table["Percent Navigated"] = round(npsummary_table["Percent Navigated"], 1)
+npsummary_table["Validation Accuracy"] = round(avg_accuracy["losses"], 3)
+# df=df.sort_values(by="Network")
+# avg_time = merge_loss_data(data_dir, df, "time", "pretrained", True)
+# avg_time['losses'] = list(map(convert_sec_to_min, list(avg_time['losses'])))
+# avg_time.columns = ['clean_names', 'time', 'mean_completion']
 
-# # NotPretrained
+npsummary_table["Time"] = list(avg_time["time"])
+npsummary_table["Number of Parameters"] = nonpre_parameters
+npsummary_table = npsummary_table.set_index(["Model", "Number of Parameters", "Time"])
+
+npsummary_table.columns = pd.MultiIndex.from_product(
+    [["Not Pretrained"], ["Valid Loss", "Percent Navigated", "Validation Accuracy"]],
+    names=["Trained/Pretrained:", "Data:"],
+)
+# -
+
+d = {'Pretrained' : summary_table['Pretrained'], 'Not Pretrained' : npsummary_table['Not Pretrained']} 
+handmade_combined = pd.concat(d.values(), axis=1, keys=d.keys())
+
+handmade_combined
+
+# # get Uniform pretrained
+
+# +
+data_dir = "/raid/clark/summer2021/datasets/uniform-full/data"
+
+df = pd.read_csv("uniform_pretrained/uniform_pre_completion_results.csv", index_col=0)
+columns = list(df.columns)
+mazes = columns[1:-3]
+df = df.assign(clean_names=list(map(get_network_name, list(df["Network"]))))
+avg_valid = merge_loss_data(data_dir, df, "valid_loss", "pretrained", True)
+avg_accuracy = merge_loss_data(data_dir, df, "accuracy", "pretrained", True)
+# avg_train = merge_loss_data(data_dir, df, "train_loss", "pretrained", True)
+df = pd.merge(df, avg_valid, on="clean_names")
+df = df.sort_values(by=['mean_completion'])
+
+summary_table = avg_valid.rename(columns={'losses':'Valid Loss'})
+# avg_train = avg_train.rename(columns={'losses':'Train Loss'})
+# summary_table = summary_table.assign(Train_Loss=avg_train["Train Loss"])
+summary_table = summary_table[
+    ["clean_names", "Valid Loss", "mean_completion"]
+]
+summary_table = summary_table.rename(
+    columns={"mean_completion": "Percent Navigated", "clean_names":"Model"}
+)
+
+summary_table["Valid Loss"] = round(summary_table["Valid Loss"], 3)
+summary_table["Percent Navigated"] = round(summary_table["Percent Navigated"], 1)
+summary_table["Validation Accuracy"] = round(avg_accuracy["losses"], 3)
+# -
+
+# # get Uniform Parameters
+
+# +
+model_dir = "/raid/clark/summer2021/datasets/uniform-full/models"
+models = os.listdir(model_dir)
+pre = []
+nonpre = []
+for m in models:
+    if "-notpre" in m:
+        nonpre.append(m)
+    else:
+        pre.append(m)
+pre.sort()
+nonpre.sort()
+pre = pre[::4]
+nonpre = nonpre[::4]
+
+pre_parameters = []
+nonpre_parameters = []
+
+for p in pre:
+    model = load_learner(model_dir + "/" + p)
+    pre_parameters.append(sizeof_fmt(sum(p.numel() for p in model.parameters())))
+
+for p in nonpre:
+    model = load_learner(model_dir + "/" + p)
+    nonpre_parameters.append(sizeof_fmt(sum(p.numel() for p in model.parameters())))
+
+# df=df.sort_values(by="Network")
+# avg_time = merge_loss_data(data_dir, df, "time", "pretrained", True)
+# avg_time['losses'] = list(map(convert_sec_to_min, list(avg_time['losses'])))
+# avg_time.columns = ['clean_names', 'time', 'mean_completion']
+
+summary_table["Time"] = list(avg_time["time"])
+summary_table["Number of Parameters"] = pre_parameters
+summary_table = summary_table.set_index(["Model", "Number of Parameters", "Time"])
+
+summary_table.columns = pd.MultiIndex.from_product(
+    [["Pretrained"], ["Valid Loss", "Percent Navigated", "Validation Accuracy"]],
+    names=["Trained/Pretrained:", "Data:"],
+)
+# -
+
+# # Get Uniform Not Pretrained
 
 # +
 npdf = pd.read_csv("uniform_nonpre/uniform_nonpre_percentage.csv", index_col=0)
@@ -333,54 +510,180 @@ columns = list(npdf.columns)
 mazes = columns[1:-3]
 npdf = npdf.assign(clean_names=list(map(get_network_name, list(npdf["Network"]))))
 avg_valid = merge_loss_data(data_dir, npdf, "valid_loss", "-notpretrained", True)
-avg_train = merge_loss_data(data_dir, npdf, "train_loss", "-notpretrained", True)
+avg_accuracy = merge_loss_data(data_dir, npdf, "accuracy", "-nopretrained", True)
+# avg_train = merge_loss_data(data_dir, npdf, "train_loss", "-notpretrained", True)
 npdf = pd.merge(npdf, avg_valid, on="clean_names")
-npdf = npdf.sort_values(by=['mean_completion'])
+npdf = npdf.sort_values(by=["mean_completion"])
 
-npsummary_table = avg_valid.rename(columns={'losses':'Valid Loss'})
-avg_train = avg_train.rename(columns={'losses':'Train Loss'})
-npsummary_table = npsummary_table.assign(Train_Loss=avg_train["Train Loss"])
-npsummary_table = npsummary_table[
-    ["clean_names", "Valid Loss", "Train_Loss", "mean_completion"]
-]
+npsummary_table = avg_valid.rename(columns={"losses": "Valid Loss"})
+# avg_train = avg_train.rename(columns={'losses':'Train Loss'})
+# npsummary_table = npsummary_table.assign(Train_Loss=avg_train["Train Loss"])
+npsummary_table = npsummary_table[["clean_names", "Valid Loss", "mean_completion"]]
 npsummary_table = npsummary_table.rename(
-    columns={"Train_Loss": "Train Loss", "mean_completion": "Percent Navigated", "clean_names":"Model"}
+    columns={"mean_completion": "Percent Navigated", "clean_names": "Model"}
 )
 
-# +
-npsummary_table["Number of Parameters"] = pre_parameters
-npsummary_table = npsummary_table.set_index(['Model', 'Number of Parameters'])
+npsummary_table["Valid Loss"] = round(npsummary_table["Valid Loss"], 3)
+npsummary_table["Percent Navigated"] = round(npsummary_table["Percent Navigated"], 1)
+npsummary_table["Validation Accuracy"] = round(avg_accuracy["losses"], 3)
+# df=df.sort_values(by="Network")
+# avg_time = merge_loss_data(data_dir, df, "time", "pretrained", True)
+# avg_time['losses'] = list(map(convert_sec_to_min, list(avg_time['losses'])))
+# avg_time.columns = ['clean_names', 'time', 'mean_completion']
+
+npsummary_table["Time"] = list(avg_time["time"])
+npsummary_table["Number of Parameters"] = nonpre_parameters
+npsummary_table = npsummary_table.set_index(["Model", "Number of Parameters", "Time"])
 
 npsummary_table.columns = pd.MultiIndex.from_product(
-    [["Not Pretrained"], ["Valid Loss", "Train Loss", "Percent Navigated"]], names=["Trained/Pretrained:", "Data:"]
+    [["Not Pretrained"], ["Valid Loss", "Percent Navigated", "Validation Accuracy"]],
+    names=["Trained/Pretrained:", "Data:"],
+)
+# -
+
+# # Combind Uniform Data
+
+d = {'Pretrained' : summary_table['Pretrained'], 'Not Pretrained' : npsummary_table['Not Pretrained']} 
+uniform_combined = pd.concat(d.values(), axis=1, keys=d.keys())
+
+uniform_combined
+
+# # get Wander non-pretrained
+
+# +
+data_dir = "/raid/clark/summer2021/datasets/corrected-wander-full/data"
+
+ndf = pd.read_csv("wander_notpretrained/wander_npre_percentage.csv", index_col=0)
+columns = list(ndf.columns)
+mazes = columns[1:-3]
+ndf = ndf.assign(clean_names=list(map(get_network_name, list(ndf["Network"]))))
+avg_valid = merge_loss_data(data_dir, ndf, "valid_loss", "-notpretrained", True)
+avg_accuracy = merge_loss_data(data_dir, npdf, "accuracy", "-nopretrained", True)
+# avg_train = merge_loss_data(data_dir, df, "train_loss", "pretrained", True)
+ndf = pd.merge(ndf, avg_valid, on="clean_names")
+ndf = ndf.sort_values(by=['mean_completion'])
+
+npsummary_table = avg_valid.rename(columns={'losses':'Valid Loss'})
+# avg_train = avg_train.rename(columns={'losses':'Train Loss'})
+# summary_table = summary_table.assign(Train_Loss=avg_train["Train Loss"])
+npsummary_table = npsummary_table[
+    ["clean_names", "Valid Loss", "mean_completion"]
+]
+npsummary_table = npsummary_table.rename(
+    columns={"mean_completion": "Percent Navigated", "clean_names":"Model"}
+)
+
+npsummary_table["Valid Loss"] = round(npsummary_table["Valid Loss"], 3)
+npsummary_table["Percent Navigated"] = round(npsummary_table["Percent Navigated"], 1)
+npsummary_table["Validation Accuracy"] = round(avg_accuracy["losses"], 3)
+# -
+
+# # Get Wander Parameters
+
+# +
+model_dir = "/raid/clark/summer2021/datasets/corrected-wander-full/models"
+models = os.listdir(model_dir)
+pre = []
+nonpre = []
+for m in models:
+    if "-notpre" in m:
+        nonpre.append(m)
+    else:
+        pre.append(m)
+pre.sort()
+nonpre.sort()
+pre = pre[::4]
+nonpre = nonpre[::4]
+
+pre_parameters = []
+nonpre_parameters = []
+
+for p in pre:
+    model = load_learner(model_dir + "/" + p)
+    pre_parameters.append(sizeof_fmt(sum(p.numel() for p in model.parameters())))
+
+for p in nonpre:
+    model = load_learner(model_dir + "/" + p)
+    nonpre_parameters.append(sizeof_fmt(sum(p.numel() for p in model.parameters())))
+
+# df=df.sort_values(by="Network")
+# avg_time = merge_loss_data(data_dir, df, "time", "pretrained", True)
+# avg_time['losses'] = list(map(convert_sec_to_min, list(avg_time['losses'])))
+# avg_time.columns = ['clean_names', 'time', 'mean_completion']
+
+npsummary_table["Time"] = list(avg_time["time"])
+npsummary_table["Number of Parameters"] = nonpre_parameters
+npsummary_table = npsummary_table.set_index(["Model", "Number of Parameters", "Time"])
+
+npsummary_table.columns = pd.MultiIndex.from_product(
+    [["Not Pretrained"], ["Valid Loss", "Percent Navigated", "Validation Accuracy"]],
+    names=["Trained/Pretrained:", "Data:"],
+)
+# -
+
+# # Get Wander not pretrained
+
+# +
+data_dir = "/raid/clark/summer2021/datasets/corrected-wander-full/data"
+
+df = pd.read_csv("wander_pre/wander_pre_percentage.csv", index_col=0)
+columns = list(df.columns)
+mazes = columns[1:-3]
+df = df.assign(clean_names=list(map(get_network_name, list(df["Network"]))))
+avg_valid = merge_loss_data(data_dir, df, "valid_loss", "pretrained", True)
+avg_accuracy = merge_loss_data(data_dir, npdf, "accuracy", "pretrained", True)
+# avg_train = merge_loss_data(data_dir, df, "train_loss", "pretrained", True)
+df = pd.merge(df, avg_valid, on="clean_names")
+df = df.sort_values(by=["mean_completion"])
+
+summary_table = avg_valid.rename(columns={"losses": "Valid Loss"})
+# avg_train = avg_train.rename(columns={'losses':'Train Loss'})
+# summary_table = summary_table.assign(Train_Loss=avg_train["Train Loss"])
+summary_table = summary_table[["clean_names", "Valid Loss", "mean_completion"]]
+summary_table = summary_table.rename(
+    columns={"mean_completion": "Percent Navigated", "clean_names": "Model"}
+)
+
+summary_table["Valid Loss"] = round(summary_table["Valid Loss"], 3)
+summary_table["Percent Navigated"] = round(summary_table["Percent Navigated"], 1)
+summary_table["Validation Accuracy"] = round(avg_accuracy["losses"], 3)
+
+summary_table["Time"] = list(avg_time["time"])
+summary_table["Number of Parameters"] = pre_parameters
+summary_table = summary_table.set_index(["Model", "Number of Parameters", "Time"])
+
+summary_table.columns = pd.MultiIndex.from_product(
+    [["Pretrained"], ["Valid Loss", "Percent Navigated", "Validation Accuracy"]],
+    names=["Trained/Pretrained:", "Data:"],
 )
 # -
 
 d = {'Pretrained' : summary_table['Pretrained'], 'Not Pretrained' : npsummary_table['Not Pretrained']} 
-combined_data = pd.concat(d.values(), axis=1, keys=d.keys())
+wander_combined = pd.concat(d.values(), axis=1, keys=d.keys())
 
-combined_data.columns = combined_data.columns.rename("Pretrained/Not Pretrained", level=0)
+wander_combined
 
-# # Get Time
+# # Combine all the Datasets
 
-df=df.sort_values(by="Network")
-avg_time = merge_loss_data(data_dir, df, "time", "pretrained", True)
-avg_time['losses'] = list(map(convert_sec_to_min, list(avg_time['losses'])))
-avg_time.columns = ['clean_names', 'time', 'mean_completion']
+d = {'Uniform' : uniform_combined, 'Handmade' : handmade_combined, "Wander": wander_combined} 
+uniform_handmade_wander = pd.concat(d.values(), axis=1, keys=d.keys())
 
-avg_time_np = merge_loss_data(data_dir, df, "time", "-notpretrained", True)
-avg_time_np['losses'] = list(map(convert_sec_to_min, list(avg_time_np['losses'])))
-avg_time_np.columns = ['clean_names', 'time', 'mean_completion']
+uniform_handmade_wander
 
-combined_data['Pretrained', 'Time'] = list(avg_time['time'])
-combined_data['Not Pretrained', 'Time'] = list(avg_time_np['time'])
+data_dir = "/raid/clark/summer2021/datasets/handmade-full/data"
+df = pd.read_csv("handmade_pretrained/handmade_pre_percentage.csv", index_col=0)
+columns = list(df.columns)
+mazes = columns[1:-3]
+# df = df.assign(clean_names=list(map(get_network_name, list(df["Network"]))))
 
-combined_data = combined_data.sort_index(axis=1)
+di = "/raid/clark/summer2021/datasets/corrected-wander-full/cmd_models"
 
-combined_data
+(di + "/" + list(df["Network"])[0]).split("-")[3]
+
+uniform_handmade_wander.to_latex("everything_table_plus_accuracy")
 
 # +
-s = combined_data.style
+s = uniform_handmade_wander.style
 
 cell_hover = {  # for row hover use <tr> instead of <td>
     'selector': 'td:hover',
@@ -408,7 +711,7 @@ s.set_table_styles([
 ], overwrite=False)
 
 s.set_table_styles({
-    ('Pretrained', 'Percent Navigated'): [{'selector': 'th', 'props': 'border-left: 1px solid white'},
+    ('Uniform', 'Handmade', 'Wander'): [{'selector': 'th', 'props': 'border-left: 1px solid white'},
                                {'selector': 'td', 'props': 'border-left: 1px solid #000066'}]
 }, overwrite=False, axis=0)
 

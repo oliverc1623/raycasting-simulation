@@ -20,7 +20,6 @@ import matplotlib as plt
 import sys
 sys.path.insert(0, '../Imitator')
 from plot_helper import * 
-data_dir = "/raid/clark/summer2021/datasets/handmade-full/data"
 
 colors = [
     "tab:blue",
@@ -33,7 +32,125 @@ colors = [
 ]
 # -
 
-df = pd.read_csv("handmade_notpretrained/handmade_notpre_percentage.csv", index_col=0)
+# # Load Data and plot Bars
+
+# +
+# -1) Move any csv file into your Data directory 
+# 0) Specify Data directory for the models
+data_dir = "/raid/clark/summer2021/datasets/corrected-wander-full/data"
+
+# 1) Specify the Dataset
+df = pd.read_csv("wander_pre/wander_pre_percentage.csv", index_col=0)
+columns = list(df.columns)
+mazes = columns[1:-3]
+df = df.assign(clean_names=list(map(get_network_name, list(df["Network"]))))
+
+# 2) Get extra Pretrained/Not Pretrained Data
+avg_valid = merge_loss_data(data_dir, df, "valid_loss", "pretrained", True)
+replicate_valid = merge_loss_data(data_dir, df, "valid_loss", "pretrained", False)
+avg_train = merge_loss_data(data_dir, df, "train_loss", "pretrained", True)
+replicate_train = merge_loss_data(data_dir, df, "train_loss", "pretrained", False)
+avg_accuracy = merge_loss_data(data_dir, df, "accuracy", "pretrained", True)
+df = pd.merge(df, avg_valid, on="clean_names")
+df = df.sort_values(by=['mean_completion'])
+
+# 3) Pass in "df" into the function, plot_bars()
+ax = plot_bars(df, "Completion")
+plt.gcf().subplots_adjust(left=0.35)
+ax.set_title("Pretrained Wander Dataset Percentage Navigated Per Model Replicate");
+# -
+
+ax = plot_average_scatter(avg_accuracy[avg_accuracy.clean_names != "ResNet18"])
+ax.title("Wander Dataset Pretrained Average Maze Percentage Navigated vs Validation Accuracy", size=20);
+ax.xlabel("Validation Accuracy", size=20)
+ax.ylabel("Average Percentage Navigated", size=20)
+ax.xticks(size=15)
+ax.yticks(size=15)
+
+# The other DataFrames like "avg_valid" can be passed into "plot_average_scatter"()
+ax = plot_average_scatter(avg_valid)
+ax.title("Wander Dataset Pretrained Average Maze Percentage Navigated vs Validation Loss", size=20);
+ax.xlabel("Validation Loss", size=20)
+ax.ylabel("Average Percentage Navigated", size=20)
+ax.xticks(size=15)
+ax.yticks(size=15)
+
+# +
+df = pd.read_csv("wander_notpretrained/wander_npre_percentage.csv", index_col=0)
+columns = list(df.columns)
+mazes = columns[1:-3]
+df = df.assign(clean_names=list(map(get_network_name, list(df["Network"]))))
+avg_valid = merge_loss_data(data_dir, df, "valid_loss", "notpretrained", True)
+replicate_valid = merge_loss_data(data_dir, df, "valid_loss", "notpretrained", False)
+avg_train = merge_loss_data(data_dir, df, "train_loss", "notpretrained", True)
+replicate_train = merge_loss_data(data_dir, df, "train_loss", "notpretrained", False)
+avg_accuracy = merge_loss_data(data_dir, df, "accuracy", "notpretrained", True)
+df = pd.merge(df, avg_valid, on="clean_names")
+df = df.sort_values(by=['mean_completion'])
+
+# %load_ext autoreload
+# %autoreload 2
+ax = plot_bars(df, "Completion")
+plt.gcf().subplots_adjust(left=0.35)
+ax.set_title("Scratch Wander Dataset Percentage Navigated Per Model Replicate");
+# -
+
+ax = plot_average_scatter(avg_accuracy)
+ax.title("Wander Dataset Scratch Average Maze Percentage Navigated vs Validation Accuracy", size=20);
+ax.xlabel("Validation Accuracy", size=20)
+ax.ylabel("Average Percentage Navigated", size=20)
+ax.xticks(size=15)
+ax.yticks(size=15)
+
+ax = plot_average_scatter(avg_valid)
+ax.title("Wander Dataset Scratch Average Maze Percentage Navigated vs Validation Loss", size=20);
+ax.xlabel("Validation Loss", size=20)
+ax.ylabel("Average Percentage Navigated", size=20)
+ax.xticks(size=15)
+ax.yticks(size=15)
+
+pd.read_csv("wander_cmd/cmd_percentage.csv", index_col=0)
+
+# +
+data_dir = "/raid/clark/summer2021/datasets/corrected-wander-full/cmd_data"
+
+df = pd.read_csv("wander_cmd/cmd_percentage.csv", index_col=0)
+columns = list(df.columns)
+mazes = columns[1:-3]
+df = df.assign(clean_names=list(map(get_network_name, list(df["Network"]))))
+avg_valid = merge_loss_data(data_dir, df, "valid_loss", "cmd", True)
+replicate_valid = merge_loss_data(data_dir, df, "valid_loss", "cmd", False)
+avg_train = merge_loss_data(data_dir, df, "train_loss", "cmd", True)
+replicate_train = merge_loss_data(data_dir, df, "train_loss", "cmd", False)
+df = pd.merge(df, avg_valid, on="clean_names")
+df = df.sort_values(by=['mean_completion'])
+
+# %load_ext autoreload
+# %autoreload 2
+ax = plot_bars(df, "Completion")
+plt.gcf().subplots_adjust(left=0.35)
+ax.set_title("Not Pretrained Percentage Navigated Per Wander Dataset Model Replicate");
+
+# +
+df = pd.read_csv("RNN/rnn_percentage.csv", index_col=0)
+columns = list(df.columns)
+mazes = columns[1:-3]
+df = df.assign(clean_names=list(map(get_network_name, list(df["Network"]))))
+avg_valid = merge_loss_data(data_dir, df, "valid_loss", "rnn", True)
+replicate_valid = merge_loss_data(data_dir, df, "valid_loss", "rnn", False)
+avg_train = merge_loss_data(data_dir, df, "train_loss", "rnn", True)
+replicate_train = merge_loss_data(data_dir, df, "train_loss", "rnn", False)
+df = pd.merge(df, avg_valid, on="clean_names")
+df = df.sort_values(by=['mean_completion'])
+
+# %load_ext autoreload
+# %autoreload 2
+ax = plot_bars(df, "Completion")
+plt.gcf().subplots_adjust(left=0.35)
+ax.set_title("Not Pretrained Percentage Navigated Per Wander Dataset Model Replicate");
+
+# +
+df = pd.read_csv("uniform_pretrained/uniform_pre_completion_results.csv", index_col=0)
 columns = list(df.columns)
 mazes = columns[1:-3]
 df = df.assign(clean_names=list(map(get_network_name, list(df["Network"]))))
@@ -44,27 +161,76 @@ replicate_train = merge_loss_data(data_dir, df, "train_loss", "pretrained", Fals
 df = pd.merge(df, avg_valid, on="clean_names")
 df = df.sort_values(by=['mean_completion'])
 
-df
+# %load_ext autoreload
+# %autoreload 2
+ax = plot_bars(df, "Completion")
+plt.gcf().subplots_adjust(left=0.35)
+ax.set_title("Pretrained Uniform Dataset Percentage Navigated Per Model Replicate");
+
+# +
+df = pd.read_csv("uniform_nonpre/uniform_nonpre_percentage.csv", index_col=0)
+columns = list(df.columns)
+mazes = columns[1:-3]
+df = df.assign(clean_names=list(map(get_network_name, list(df["Network"]))))
+avg_valid = merge_loss_data(data_dir, df, "valid_loss", "notpretrained", True)
+replicate_valid = merge_loss_data(data_dir, df, "valid_loss", "notpretrained", False)
+avg_train = merge_loss_data(data_dir, df, "train_loss", "pretrained", True)
+replicate_train = merge_loss_data(data_dir, df, "train_loss", "notpretrained", False)
+df = pd.merge(df, avg_valid, on="clean_names")
+df = df.sort_values(by=['mean_completion'])
 
 # %load_ext autoreload
 # %autoreload 2
 ax = plot_bars(df, "Completion")
 plt.gcf().subplots_adjust(left=0.35)
-ax.set_title("Percentage Navigated Per Pretrained Model Replicate");
+ax.set_title("Scratch Uniform Dataset Percentage Navigated Per Model Replicate");
+
+# +
+df = pd.read_csv("handmade_pretrained/handmade_pre_percentage.csv", index_col=0)
+columns = list(df.columns)
+mazes = columns[1:-3]
+df = df.assign(clean_names=list(map(get_network_name, list(df["Network"]))))
+avg_valid = merge_loss_data(data_dir, df, "valid_loss", "pretrained", True)
+replicate_valid = merge_loss_data(data_dir, df, "valid_loss", "pretrained", False)
+avg_train = merge_loss_data(data_dir, df, "train_loss", "pretrained", True)
+replicate_train = merge_loss_data(data_dir, df, "train_loss", "pretrained", False)
+df = pd.merge(df, avg_valid, on="clean_names")
+df = df.sort_values(by=['mean_completion'])
 
 # %load_ext autoreload
 # %autoreload 2
 ax = plot_bars(df, "Completion")
 plt.gcf().subplots_adjust(left=0.35)
-ax.set_title("Percentage Navigated Per Pretrained Model Replicate");
+ax.set_title("Pretrained Handmade Dataset Percentage Navigated Per Model Replicate");
+
+# +
+df = pd.read_csv("handmade_notpretrained/handmade_notpre_percentage.csv", index_col=0)
+columns = list(df.columns)
+mazes = columns[1:-3]
+df = df.assign(clean_names=list(map(get_network_name, list(df["Network"]))))
+avg_valid = merge_loss_data(data_dir, df, "valid_loss", "notpretrained", True)
+replicate_valid = merge_loss_data(data_dir, df, "valid_loss", "notpretrained", False)
+avg_train = merge_loss_data(data_dir, df, "train_loss", "notpretrained", True)
+replicate_train = merge_loss_data(data_dir, df, "train_loss", "notpretrained", False)
+df = pd.merge(df, avg_valid, on="clean_names")
+df = df.sort_values(by=['mean_completion'])
+
+# %load_ext autoreload
+# %autoreload 2
+ax = plot_bars(df, "Completion")
+plt.gcf().subplots_adjust(left=0.35)
+ax.set_title("Scratch Handmade Dataset Percentage Navigated Per Model Replicate");
+# -
+
+
 
 # +
 # %load_ext autoreload
 # %autoreload 2
 
-ax = plot_average_scatter(avg_valid)
-ax.title("Average Maze Percentage Navigated as a Function of Valid Loss", size=20);
-ax.xlabel("Valid Loss", size=20)
+ax = plot_average_scatter(avg_accuracy)
+ax.title("Wander Dataset Scratch Average Maze Percentage Navigated vs Validation Accuracy", size=20);
+ax.xlabel("Validation Accuracy", size=20)
 ax.ylabel("Average Percentage Navigated", size=20)
 ax.xticks(size=15)
 ax.yticks(size=15)
