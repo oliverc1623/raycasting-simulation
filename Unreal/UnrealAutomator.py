@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import sys
 import os
 import math
+import time
 
 # assuming running from raycasting-simulation/Automator
 sys.path.append("../PycastWorld")
@@ -27,7 +28,7 @@ rand_angle_scale = pi / 36  # 5 degree s.d.
 # the minimum of the uniform distribution that random distances (to move) are drawn from
 rand_step_scale = 0.4
 
-enws = {"Dir.EAST": 0, "Dir.NORTH": 90, "Dir.WEST": 180, "Dir.SOUTH": 270}
+enws = {"Dir.EAST": 180, "Dir.NORTH": 90, "Dir.WEST": 0, "Dir.SOUTH": 270}
 
 
 def in_targ_cell(base_dir, c_targ_x, c_targ_y, x, y):
@@ -50,8 +51,8 @@ class Driver:
         self.targ_dir = targ_dir
 
         self.world = world
-        self.curr_x = self.world.x
-        self.curr_y = self.world.y
+        self.curr_x = self.world.get_x()
+        self.curr_y = self.world.get_y()
 
         self.direction = 0
         self.update_direction()
@@ -83,9 +84,10 @@ class Driver:
 
     def update_dist(self):
         self.dist = math.sqrt(
-            (self.c_targ_x - self.world.x) ** 2
-            + (self.c_targ_y - self.world.y) ** 2
+            (self.c_targ_x - self.world.get_x()) ** 2
+            + (self.c_targ_y - self.world.get_y()) ** 2
         )
+#         print(f"dist: {self.dist}")
 
     def update_direction(self):
         if not -1 <= self.world.get_dir_x() <= 1:
@@ -119,20 +121,29 @@ class Driver:
         elif self.base_dir == 90 or self.base_dir == 270:
             if self.targ_dir == 0:
                 return self.c_targ_x + delta, self.c_targ_y
+#                 return self.c_targ_x - delta, self.c_targ_y
             elif self.targ_dir == 180:
                 return self.c_targ_x - delta, self.c_targ_y
+#                 return self.c_targ_x + delta, self.c_targ_y
         return self.c_targ_x, self.c_targ_y
 
     def get_angle(self):
+        print("GETTING ANGLE")
         mod_x, mod_y = self.modified_targ(0.15)
+        print(f"MOD_X: {mod_x}, MOD_Y: {mod_y}")
+        print(f"CURR_X: {self.curr_x}, CURR_Y: {self.curr_y}")
+        # top right? 
+        # top right -> top left
         if self.curr_x <= mod_x and self.curr_y <= mod_y:
+            print("in top right")
             if mod_x == self.curr_x:
                 theta = pi / 2
             else:
-                theta = (atan((mod_y - self.curr_y) / (mod_x - self.curr_x))) % (2 * pi)
+                theta = (atan((mod_y - self.curr_y) / (mod_x - self.curr_x))) % (2 * pi) 
 
         # case where target pos is up and to the left
         elif self.curr_x > mod_x and self.curr_y <= mod_y:
+            print("in top left")
             if mod_y == self.curr_y:
                 theta = pi
             else:
@@ -142,8 +153,9 @@ class Driver:
 
         # case where target pos is down and to the left
         elif self.curr_x > mod_x and self.curr_y > mod_y:
+            print("in bottom left")
             if mod_x == self.curr_x:
-                theta = 3 * pi / 2
+                theta = 0#3 * pi / 2
             else:
                 theta = (atan((self.curr_y - mod_y) / (self.curr_x - mod_x))) % (
                     2 * pi
@@ -151,54 +163,61 @@ class Driver:
 
         # case where target pos is down and to the right
         else:
+            print("in bottom right")
             if self.curr_y == mod_y:
                 theta = 0
             else:
                 theta = (atan((mod_x - self.curr_x) / (self.curr_y - mod_y))) % (
                     2 * pi
                 ) + 3 * pi / 2
+        print(f"THETA {theta*(180/pi)}")
         return theta
 
     def set_rand_angle(self):
         theta = self.get_angle()
         self.angle = rng.normal(loc=theta, scale=rand_angle_scale) % (2 * pi)
+        print(f"self.angle: {self.angle}")
 
     def set_rand_step(self):
         self.step = rng.uniform(rand_step_scale, self.dist_to_wall())
 
     def abs_angle_diff(self, angle):
+        print(f"ABS_ANGLE_DIFF: dir: {self.direction}, angle: {angle}")
         abs_diff = abs(self.direction - angle)
         return abs_diff % (2 * pi)
 
     def turn_right(self, angle):
-        if self.direction > angle:
-            if self.direction - angle > pi:
+#         print(f"right condition: dir {self.direction*(180/math.pi)} angle: {angle*(180/math.pi)}")
+#         print(f"adje right condition: dir {self.direction*(180/math.pi)} angle: {angle*(180/math.pi)}")
+        adj_dir = self.direction#(pi - self.direction)
+        if adj_dir > angle:
+            if adj_dir - angle > pi:
                 return False
             else:
                 return True
         else:
-            if angle - self.direction > pi:
+            if angle - adj_dir > pi:
                 return True
             else:
                 return False
             
     @staticmethod
     def filename_from_angle_deg(angle: float, i: int) -> str:
-        return f"{i:>06}_{angle:.3f}".replace(".", "p") + ".png"
+        return f"{i:>06}_{angle:.3f}".replace(".", "p") + "_" + str(round(time.time() * 1000)) + "_" + ".png"
 
     def turn_to_angle(self):
-        self.world.forward()
+#         self.world.forward()
         i = 0
         prev_turn = None
-        while self.abs_angle_diff(math.radians(self.angle)) > 0.1:
-            if self.turn_right(math.radians(self.angle)):
+        while self.abs_angle_diff(self.angle) > 0.1:
+            if self.turn_right(self.angle):
 
                 if prev_turn == "left":
                     print("no left to right allowed")
                     break
 
                 # save image right
-                agent_dir = -abs(90 + self.world.turn_speed)
+                agent_dir = -abs(90 + self.world.get_angle())
                 angle_label = self.filename_from_angle_deg(agent_dir, self.img_num)
                 if self.img_dir != None:
                     if self.stack_dir:
@@ -213,10 +232,8 @@ class Driver:
                             )
                         )
                         self.img_num_r += 1
-
-                self.world.right()
-#                 self.world.update()
-
+                print("turning right")
+                self.world.right()             
                 prev_turn = "right"
 
             else:
@@ -225,7 +242,7 @@ class Driver:
                     break
 
                 # save image left
-                agent_dir = abs(90 + self.world.turn_speed)
+                agent_dir = abs(90 + self.world.get_angle())
                 angle_label = self.filename_from_angle_deg(agent_dir, self.img_num)
                 if self.img_dir != None:
                     if self.stack_dir:
@@ -240,10 +257,8 @@ class Driver:
                             )
                         )
                         self.img_num_l += 1
-
+                print("turning left")
                 self.world.left()
-#                 self.world.update()
-
                 prev_turn = "left"
 
             if self.show_freq != 0:
@@ -266,31 +281,31 @@ class Driver:
     def dist_to_wall(self):
         if self.targ_dir == 0:
             if (3 * pi / 2) <= self.direction <= (2 * pi):
-                a = self.world.y - (self.c_targ_y - 0.5)
+                a = self.world.get_y() - (self.c_targ_y - 0.5)
                 theta = self.direction - (3 * pi / 2)
             else:
-                a = (self.c_targ_y + 0.5) - self.world.y
+                a = (self.c_targ_y + 0.5) - self.world.get_y()
                 theta = self.direction
         elif self.targ_dir == 90:
             if 0 <= self.direction <= (pi / 2):
-                a = (self.c_targ_x + 0.5) - self.world.x
+                a = (self.c_targ_x + 0.5) - self.world.get_x()
                 theta = self.direction
             else:
-                a = self.world.x - (self.c_targ_x - 0.5)
+                a = self.world.get_x() - (self.c_targ_x - 0.5)
                 theta = pi - self.direction
         elif self.targ_dir == 180:
             if (pi / 2) <= self.direction <= pi:
-                a = (self.c_targ_y + 0.5) - self.world.y
+                a = (self.c_targ_y + 0.5) - self.world.get_y()
                 theta = self.direction - (pi / 2)
             else:
-                a = self.world.y - (self.c_targ_y - 0.5)
+                a = self.world.get_y() - (self.c_targ_y - 0.5)
                 theta = (3 * pi / 2) - self.direction
         elif self.targ_dir == 270:
             if pi <= self.direction <= 3 * pi / 2:
-                a = self.world.x - (self.c_targ_x - 0.5)
+                a = self.world.get_x() - (self.c_targ_x - 0.5)
                 theta = self.direction - pi
             else:
-                a = (self.c_targ_x + 0.5) - self.world.x
+                a = (self.c_targ_x + 0.5) - self.world.get_x()
                 theta = (2 * pi) - self.direction
 
         b, c = self.solve_triangle(theta, a)
@@ -327,8 +342,8 @@ class Driver:
             self.world.forward()
 #             self.world.update()
 
-            self.curr_x = self.world.x
-            self.curr_y = self.world.y
+            self.curr_x = self.world.get_x()
+            self.curr_y = self.world.get_y()
 
             if self.show_freq != 0:
                 if i % self.show_freq == 0:
@@ -337,7 +352,7 @@ class Driver:
                     plt.show()
                 i += 1
 
-            self.step -= self.world.walk_speed
+            self.step -= self.world.rc_walk_speed
             self.update_dist()
 
 #         self.world.walk(Walk.Stop)
@@ -353,6 +368,7 @@ class Navigator:
         else:
             print(ue4.request("vget /unrealcv/status"))
         self.world = UE4EnvWrapper(ue4)#PycastWorld(320, 240, maze)
+        self.world.change_level(maze)
         self.img_dir = img_dir
 
         # getting directions
@@ -366,7 +382,7 @@ class Navigator:
                 in_file.readline()
 
             self.directions = in_file.readlines()
-
+        
         self.num_directions = len(self.directions)
         start_angle = enws[self.directions[0].split()[2]]
         self.world.set_pose(angle = start_angle)
@@ -396,10 +412,19 @@ class Navigator:
         while not in_targ_cell(
             base_dir, c_targ_x, c_targ_y, driver.curr_x, driver.curr_y
         ):
+            print("Stepping through steps")
+#             print(driver.curr_x)
+#             print(driver.curr_y)
             driver.set_rand_angle()
+#             print("out of set_rand_angle")
+#             print("inside turn to angle")
             driver.turn_to_angle()
+#             print("outside turn to angle")
             driver.set_rand_step()
+#             print("outside set rand step")
+#             print("inside move to step")
             driver.move_to_step()
+#             print("out of move to step")
 
             self.angles.append(driver.get_angle())
 

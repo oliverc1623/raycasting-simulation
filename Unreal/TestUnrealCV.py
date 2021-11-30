@@ -5,7 +5,8 @@ sys.path.append("/home/eoca2018/unrealcv/client/python")
 #from unrealcv import client  # type: ignore
 import unrealcv
 
-client = unrealcv.Client(("localhost", 9000), None)
+client = unrealcv.Client(("localhost", 8999), None)
+#client = unrealcv.client
 client.connect(timeout=5)
 
 if not client.isconnected():
