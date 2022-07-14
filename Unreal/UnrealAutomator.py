@@ -14,8 +14,9 @@ from math import floor
 from math import radians
 from pycaster import PycastWorld, Turn, Walk
 from numpy.random import default_rng
-sys.path.append("/home/eoca2018/unrealcv/client/python")
-from unrealcv import client as ue4
+sys.path.append("/home/eoca2018/unrealcv/client/python") # adjust according to your unrealcv directory
+# from unrealcv import client as ue4
+import unrealcv
 from unrealcv.util import read_png
 from UnrealUtils import UE4EnvWrapper
 
@@ -32,6 +33,15 @@ enws = {"Dir.EAST": 180, "Dir.NORTH": 90, "Dir.WEST": 0, "Dir.SOUTH": 270}
 
 
 def in_targ_cell(base_dir, c_targ_x, c_targ_y, x, y):
+    """
+    Determines if agent is in target cell (next cell).
+    Parameters:
+        base_dir (int): current direction e.g. 180, 90, ...
+        c_targ_x (float): x coordinate of the next cell
+        c_targ_y (float): y coordinate of the next cell
+        x (float): current x coordinate
+        y (float): current y coordinate
+    """
     if base_dir == 0 or base_dir == 180:
         if abs(c_targ_x - x) < 0.4:
             return True
@@ -42,6 +52,18 @@ def in_targ_cell(base_dir, c_targ_x, c_targ_y, x, y):
 
 
 class Driver:
+    """
+    This class defines a Driver object to communicate directions to the agent.
+    
+    Attributes: 
+        c_targ_x (float): x coordinate of the next cell
+        c_targ_y (float): y coordinate of the next cell
+        base_dir (int): current direction e.g. 180, 90, ...
+        targ_dir (int): next direction e.g. 180, 90, ...
+        world (UE4EnvWrapper): Unreal Engine client - this you can modify according to UE5
+        img_dir (string): directory to store image files
+        show_freq (int): frequency we want to save images at to make a movie/gif. E.g. 5 means save every 5th images to make a movie
+    """
     def __init__(
         self, c_targ_x, c_targ_y, base_dir, targ_dir, world, img_dir=None, show_freq=0,
     ):
@@ -83,13 +105,21 @@ class Driver:
         self.show_freq = show_freq
 
     def update_dist(self):
+        """
+        Calculate Euclidean distance between current coordinates and target coordinates
+        """
         self.dist = math.sqrt(
             (self.c_targ_x - self.world.get_x()) ** 2
             + (self.c_targ_y - self.world.get_y()) ** 2
         )
-#         print(f"dist: {self.dist}")
 
     def update_direction(self):
+        """
+        Updates current angle of the agent - I think
+        
+        self.world.get_dir_x() gets cos(theta)
+        self.world.get_dir_y() gets sin(theta)
+        """
         if not -1 <= self.world.get_dir_x() <= 1:
             dir_x = round(self.world.get_dir_x())
         else:
@@ -113,6 +143,14 @@ class Driver:
 
     # adjust for smoother path
     def modified_targ(self, delta):
+        """
+        Add a value to the target coordinates to induce more variability.
+        This is suppose to help train the model to handle new mazes it has
+        never seen before
+        
+        Parameters: 
+            delta (float): value to offset the target x,y coordinates
+        """
         if self.base_dir == 0 or self.base_dir == 180:
             if self.targ_dir == 90:
                 return self.c_targ_x, self.c_targ_y + delta
@@ -121,21 +159,18 @@ class Driver:
         elif self.base_dir == 90 or self.base_dir == 270:
             if self.targ_dir == 0:
                 return self.c_targ_x + delta, self.c_targ_y
-#                 return self.c_targ_x - delta, self.c_targ_y
             elif self.targ_dir == 180:
                 return self.c_targ_x - delta, self.c_targ_y
-#                 return self.c_targ_x + delta, self.c_targ_y
         return self.c_targ_x, self.c_targ_y
 
     def get_angle(self):
-        print("GETTING ANGLE")
-        mod_x, mod_y = self.modified_targ(0.15)
-        print(f"MOD_X: {mod_x}, MOD_Y: {mod_y}")
-        print(f"CURR_X: {self.curr_x}, CURR_Y: {self.curr_y}")
-        # top right? 
-        # top right -> top left
+        """
+        Returns the currently angle of the agent
+        """
+        mod_x, mod_y = self.modified_targ(0.15) 
+        # case where target position is up to the right
+        # going top right -> top left
         if self.curr_x <= mod_x and self.curr_y <= mod_y:
-            print("in top right")
             if mod_x == self.curr_x:
                 theta = pi / 2
             else:
@@ -143,7 +178,6 @@ class Driver:
 
         # case where target pos is up and to the left
         elif self.curr_x > mod_x and self.curr_y <= mod_y:
-            print("in top left")
             if mod_y == self.curr_y:
                 theta = pi
             else:
@@ -153,9 +187,8 @@ class Driver:
 
         # case where target pos is down and to the left
         elif self.curr_x > mod_x and self.curr_y > mod_y:
-            print("in bottom left")
             if mod_x == self.curr_x:
-                theta = 0#3 * pi / 2
+                theta = 0
             else:
                 theta = (atan((self.curr_y - mod_y) / (self.curr_x - mod_x))) % (
                     2 * pi
@@ -163,33 +196,47 @@ class Driver:
 
         # case where target pos is down and to the right
         else:
-            print("in bottom right")
             if self.curr_y == mod_y:
                 theta = 0
             else:
                 theta = (atan((mod_x - self.curr_x) / (self.curr_y - mod_y))) % (
                     2 * pi
                 ) + 3 * pi / 2
-        print(f"THETA {theta*(180/pi)}")
         return theta
 
     def set_rand_angle(self):
+        """
+        Randomly select a turn angle from a normal distribution centered at the 
+        current angle. This is to add a little randomness so that the model
+        can traverse a new maze better. 
+        
+        This could be a potential spot to modify
+        to set your own desired turning angles.
+        """
         theta = self.get_angle()
         self.angle = rng.normal(loc=theta, scale=rand_angle_scale) % (2 * pi)
-        print(f"self.angle: {self.angle}")
 
     def set_rand_step(self):
+        """
+        Randomly select a distance to travel in a straight line 
+        from a uniform distribution 
+        
+        In other words select from a Uniform(0.4, distance to wall) distribution.
+        """
         self.step = rng.uniform(rand_step_scale, self.dist_to_wall())
 
     def abs_angle_diff(self, angle):
-        print(f"ABS_ANGLE_DIFF: dir: {self.direction}, angle: {angle}")
+        """
+        Calculate absolute angle difference between current angle and given angle
+        
+        Parameters: 
+            angle (float): angle - not necessarily the agent's own angle
+        """
         abs_diff = abs(self.direction - angle)
         return abs_diff % (2 * pi)
 
     def turn_right(self, angle):
-#         print(f"right condition: dir {self.direction*(180/math.pi)} angle: {angle*(180/math.pi)}")
-#         print(f"adje right condition: dir {self.direction*(180/math.pi)} angle: {angle*(180/math.pi)}")
-        adj_dir = self.direction#(pi - self.direction)
+        adj_dir = self.direction #(pi - self.direction) might need this is you don't use UE coordinate system
         if adj_dir > angle:
             if adj_dir - angle > pi:
                 return False
@@ -206,7 +253,14 @@ class Driver:
         return f"{i:>06}_{angle:.3f}".replace(".", "p") + "_" + str(round(time.time() * 1000)) + "_" + ".png"
 
     def turn_to_angle(self):
-#         self.world.forward()
+        """
+        Tell the agent how much it should turn based on the current angle head and target cell
+        
+        The amount to turn by is calculated by computing the angle difference between the current
+        angle and target angle/direction
+        
+        Another potential place to modify to specify your own turn angles instead
+        """
         i = 0
         prev_turn = None
         while self.abs_angle_diff(self.angle) > 0.1:
@@ -220,6 +274,8 @@ class Driver:
                 agent_dir = -abs(90 + self.world.get_angle())
                 angle_label = self.filename_from_angle_deg(agent_dir, self.img_num)
                 if self.img_dir != None:
+                    # You can comment out save_png if you want to test the agent faster
+                    # without saving images
                     if self.stack_dir:
                         self.world.save_png(
                             os.path.join(self.img_dir, f"{angle_label}")
@@ -232,7 +288,6 @@ class Driver:
                             )
                         )
                         self.img_num_r += 1
-                print("turning right")
                 self.world.right()             
                 prev_turn = "right"
 
@@ -257,10 +312,10 @@ class Driver:
                             )
                         )
                         self.img_num_l += 1
-                print("turning left")
                 self.world.left()
                 prev_turn = "left"
-
+            
+            # This chunk saves images for every show_freq amount for the movie gif
             if self.show_freq != 0:
                 if i % self.show_freq == 0:
                     image_data = self.world.request_image()#np.array(self.world)
@@ -270,7 +325,6 @@ class Driver:
 
             self.update_direction()
 
-#         self.world.turn(Turn.Stop)
 
     @staticmethod
     def solve_triangle(theta, a):
@@ -279,6 +333,10 @@ class Driver:
         return b, c
 
     def dist_to_wall(self):
+        """
+        Computes distance to wall from the agent's 
+        current angle to the target direction (90, 180, 270, or 0)
+        """
         if self.targ_dir == 0:
             if (3 * pi / 2) <= self.direction <= (2 * pi):
                 a = self.world.get_y() - (self.c_targ_y - 0.5)
@@ -316,7 +374,9 @@ class Driver:
             return b
 
     def move_to_step(self):
-#         self.world.turn(Turn.Stop)
+        """
+        Tell the agent how much to move forward by 
+        """
         i = 0
         while (
             not in_targ_cell(
@@ -326,6 +386,8 @@ class Driver:
         ):
             angle_label = self.filename_from_angle_deg(0.0, self.img_num)
             if self.img_dir != None:
+                # You can comment out save_png if you want to test the agent faster
+                # without saving images
                 if self.stack_dir:
                     self.world.save_png(
                         os.path.join(self.img_dir, f"{angle_label}")
@@ -340,11 +402,12 @@ class Driver:
                     self.img_num_s += 1
 
             self.world.forward()
-#             self.world.update()
 
+            # update current x,y
             self.curr_x = self.world.get_x()
             self.curr_y = self.world.get_y()
 
+            # This chunk saves images for every show_freq amount for the movie gif
             if self.show_freq != 0:
                 if i % self.show_freq == 0:
                     image_data = self.world.request_image()#np.array(self.world)
@@ -355,23 +418,30 @@ class Driver:
             self.step -= self.world.rc_walk_speed
             self.update_dist()
 
-#         self.world.walk(Walk.Stop)
-
 
 class Navigator:
+    """
+    This is a class to define an object that handles navigation inputs and the UE client
+    
+    Attributes: 
+        maze (file): 2D txt representation of the maze
+        img_dir (dir): directory to save images in
+    """
     def __init__(self, maze, img_dir=None):
-        # establish connection to game     
-        print(sys.path)
-        ue4.connect(timeout=5)
-        if not ue4.isconnected():
+        # Establish connection to game     
+        # Enter UnrealCV connection 
+        client = unrealcv.Client(("localhost", 8999), None)
+        client.connect(timeout=5)
+        if not client.isconnected():
             print("UnrealCV server is not running.")
         else:
-            print(ue4.request("vget /unrealcv/status"))
-        self.world = UE4EnvWrapper(ue4)#PycastWorld(320, 240, maze)
+            print(client.request("vget /unrealcv/status"))
+        self.world = UE4EnvWrapper(client)
         self.world.change_level(maze)
         self.img_dir = img_dir
 
         # getting directions
+        # read the 2D maze file
         with open(maze, "r") as in_file:
             png_count = int(in_file.readline())
             for _ in range(png_count):
@@ -384,12 +454,18 @@ class Navigator:
             self.directions = in_file.readlines()
         
         self.num_directions = len(self.directions)
+        # map direction to ENWS value
+        # {"Dir.EAST": 180, "Dir.NORTH": 90, "Dir.WEST": 0, "Dir.SOUTH": 270}
         start_angle = enws[self.directions[0].split()[2]]
         self.world.set_pose(angle = start_angle)
         
         self.angles = []
 
     def navigate(self, index, show_dir=False, show_freq=0):
+        """
+        Navigate tells the driver to set a randle angle, turn to it, 
+        set a random step foward, and then move towards that step  
+        """
         _, _, s_base_dir = self.directions[index].split()
         targ_x, targ_y, s_targ_dir = self.directions[index + 1].split()
         targ_x, targ_y = int(targ_x), int(targ_y)
@@ -412,19 +488,10 @@ class Navigator:
         while not in_targ_cell(
             base_dir, c_targ_x, c_targ_y, driver.curr_x, driver.curr_y
         ):
-            print("Stepping through steps")
-#             print(driver.curr_x)
-#             print(driver.curr_y)
             driver.set_rand_angle()
-#             print("out of set_rand_angle")
-#             print("inside turn to angle")
             driver.turn_to_angle()
-#             print("outside turn to angle")
             driver.set_rand_step()
-#             print("outside set rand step")
-#             print("inside move to step")
             driver.move_to_step()
-#             print("out of move to step")
 
             self.angles.append(driver.get_angle())
 
